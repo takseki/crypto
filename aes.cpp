@@ -6,67 +6,90 @@
 
 using std::cout;
 using std::endl;
-using CryptoPP::AES;
-using CryptoPP::CBC_Mode;
 using CryptoPP::HexEncoder;
 using CryptoPP::HexDecoder;
 using CryptoPP::StringSource;
 using CryptoPP::StringSink;
 using CryptoPP::StreamTransformationFilter;
 
+class Crypto {
+  //using CryptoType = CryptoPP::ECB_Mode<CryptoPP::AES>;
+  //using CryptoType = CryptoPP::CBC_Mode<CryptoPP::AES>;
+  using CryptoType = CryptoPP::CTR_Mode<CryptoPP::AES>;
+
+public:
+  Crypto()
+    : key(0x00, CryptoPP::AES::DEFAULT_KEYLENGTH),
+      iv(CryptoPP::AES::BLOCKSIZE) {
+
+    // Generate a random key
+    rnd.GenerateBlock( key, key.size() );
+
+    // Generate a random IV
+    rnd.GenerateBlock(iv, iv.size());
+
+    encctx.reset(new CryptoType::Encryption(key, key.size(), iv));
+    decctx.reset(new CryptoType::Decryption(key, key.size(), iv));
+    //encctx.reset(new CryptoType::Encryption(key, key.size()));
+    //decctx.reset(new CryptoType::Decryption(key, key.size()));
+  }
+
+  std::string enc(const std::string& plain) {
+    // Encrypt
+    std::string cipher;
+    StringSource( plain, true,
+                  new StreamTransformationFilter( *encctx,
+                                                  new StringSink( cipher )
+                                                  //StreamTransformationFilter::PKCS_PADDING
+                                                  //StreamTransformationFilter::ZEROS_PADDING
+                    )
+      );
+    //cout << "cipher: " << cipher << endl;
+    return cipher;
+  }
+
+  std::string dec(const std::string& coded) {
+    // Decrypt
+    std::string decoded;
+    StringSource( coded, true,
+                  new StreamTransformationFilter( *decctx,
+                                                  new StringSink( decoded )
+                                                  //StreamTransformationFilter::PKCS_PADDING
+                                                  //StreamTransformationFilter::ZEROS_PADDING
+                    )
+      );
+    return decoded;
+  }
+
+private:
+  CryptoPP::AutoSeededRandomPool rnd;
+  CryptoPP::SecByteBlock key;
+  CryptoPP::SecByteBlock iv;
+  std::unique_ptr<CryptoType::Encryption> encctx;
+  std::unique_ptr<CryptoType::Decryption> decctx;
+};
+
 int main()
 {
-  CryptoPP::AutoSeededRandomPool rnd;
-
-  // Generate a random key
-  CryptoPP::SecByteBlock key(0x00, CryptoPP::AES::DEFAULT_KEYLENGTH);
-  rnd.GenerateBlock( key, key.size() );
-
-  // Generate a random IV
-  CryptoPP::SecByteBlock iv(CryptoPP::AES::BLOCKSIZE);
-  rnd.GenerateBlock(iv, iv.size());
+  Crypto crypto;
 
   std::string plain = "Hello! How are you.";
-  cout << "plain    : " << plain << endl;
+  cout << "plain    : " << plain;
 
-  // Encrypt
-  CBC_Mode<AES>::Encryption encctx(key, key.size(), iv);
-  std::string cipher;
-  StringSource( plain, true,
-    new StreamTransformationFilter( encctx,
-                                    new StringSink( cipher )
-                                    //StreamTransformationFilter::PKCS_PADDING
-                                    //StreamTransformationFilter::ZEROS_PADDING
-      )
-    );
-  //cout << "cipher: " << cipher << endl;
+  auto encoded = crypto.enc(plain);
 
-  // hex encode
-  std::string encoded;
-  StringSource( cipher, true,
-                new HexEncoder(
-                  new StringSink( encoded )
-                  ));
-  cout << "encoded  : " << encoded << endl;
+  plain = "Good morning!";
+  cout << plain << endl;
+  encoded += crypto.enc(plain);
 
-  // hex decode
-  std::string decoded;
-  StringSource( encoded, true,
-                new HexDecoder(
-                  new StringSink( decoded )
-                  ));
-  //cout << "decodeed : " <<  decoded << endl;
+  plain = "にゃーん";
+  cout << plain << endl;
+  encoded += crypto.enc(plain);
 
-  // Decrypt
-  CBC_Mode<AES>::Decryption decctx(key, key.size(), iv);
-  std::string recovered;
-  StringSource( decoded, true,
-                new StreamTransformationFilter( decctx,
-                                                new StringSink( recovered )
-                                                //StreamTransformationFilter::PKCS_PADDING
-                                                //StreamTransformationFilter::ZEROS_PADDING
-                  )
-    );
-  cout << "recovered: " << recovered << endl;
+  plain = "RTT±500ms";
+  cout << plain << endl;
+  encoded += crypto.enc(plain);
 
+  auto decoded = crypto.dec(encoded);
+  cout << "decoded  : " << decoded << endl;
 }
